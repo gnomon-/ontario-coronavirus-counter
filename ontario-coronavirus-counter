@@ -1,13 +1,77 @@
 #!/bin/bash
 
-curl -sL \
-  'https://api.ontario.ca/api/drupal/page%2F2019-novel-coronavirus?fields=nid,field_body_beta,body' \
-  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:74.0) Gecko/20100101 Firefox/74.0' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: en,en-CA;q=0.8,en-GB;q=0.7,en-US;q=0.5,fr-CA;q=0.3,fr-FR;q=0.2' \
-  --compressed \
-  -H 'Origin: https://www.ontario.ca' \
-  -H 'DNT: 1' \
-  -H 'Connection: keep-alive' \
-  -H 'Referer: https://www.ontario.ca/page/2019-novel-coronavirus' | \
-  jq -r '.body.und[0].safe_value'
+# cf. https://www.ontario.ca/page/2019-novel-coronavirus
+
+# Run this out of your crontab with a setting like..:
+#
+#   m     h dom mon dow   command
+#   0     *   *   *   *   ~/src/ontario-coronavirus-counter/ontario-coronavirus-counter
+#
+# The page is supposed to be updated every 1030h and 1730h ET, but we can poll
+# a little more frequently if we like; hourly should be fine.
+
+set -o nounset -o pipefail
+
+declare -a opts_curl
+declare -i ret now
+declare    url fn{,_{head,json,html,log}} msg
+
+url='https://api.ontario.ca/api/drupal/page%2F2019-novel-coronavirus?fields=nid,field_body_beta,body'
+
+opts_curl=(
+  '--fail'
+  '--silent'
+  '--location'
+  '--compressed'
+  '--connect-timeout' 30
+  '--retry' 5
+)
+
+printf -v now '%(%s)T' -1
+
+printf -v fn '%(%s)T-%d' "$now" $$
+fn_log=${fn}.log
+fn_head=${fn}.head
+fn_json=${fn}.json
+fn_html=${fn}.html
+
+if ! cd "${0%/*}"; then
+	printf 'failed to cd to the repo directory with return code %d\n' $?
+	exit 1
+fi
+
+curl "${opts_curl[@]}" -D "$fn_head" --stderr "$fn_log" -o "$fn_json" -- "$url"
+ret=$?
+
+if ((0 != ret)); then
+	printf 'curl failed with return code %d\n' "$ret"
+	exit 2
+fi
+
+jq -r '.body.und[0].safe_value' "$fn_json" > "$fn_html"
+ret=$?
+
+if ((0 != ret)); then
+	printf 'jq failed with return code %d\n' "$ret"
+	exit 3
+fi
+
+function cleanup {
+	rm -- "$fn_log" "$fn_head" "$fn_json" "$fn_html"
+}
+
+trap cleanup EXIT
+
+cp -- "$fn_html" coronavirus-cases.html
+
+printf -v msg 'Update as of %(%FT%T%z)T' "$now"
+
+if ! git commit -a -m "$msg" --allow-empty; then
+	printf 'git commit failed with return code %d\n' "$ret"
+	exit 4
+fi
+
+if ! git push; then
+	printf 'git push failed with return code %d\n' "$ret"
+	exit 5
+fi
