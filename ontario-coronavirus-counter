@@ -1,0 +1,13 @@
+#!/bin/bash
+
+curl -sL \
+  'https://api.ontario.ca/api/drupal/page%2F2019-novel-coronavirus?fields=nid,field_body_beta,body' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:74.0) Gecko/20100101 Firefox/74.0' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: en,en-CA;q=0.8,en-GB;q=0.7,en-US;q=0.5,fr-CA;q=0.3,fr-FR;q=0.2' \
+  --compressed \
+  -H 'Origin: https://www.ontario.ca' \
+  -H 'DNT: 1' \
+  -H 'Connection: keep-alive' \
+  -H 'Referer: https://www.ontario.ca/page/2019-novel-coronavirus' | \
+  jq -r '.body.und[0].safe_value'
