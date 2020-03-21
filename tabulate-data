@@ -1,0 +1,81 @@
+#!/bin/bash
+
+git log --no-abbrev --oneline --no-decorate | \
+  while read commit other_stuff; do
+	[[ $other_stuff =~ ^Update ]] || continue
+	printf '%s:\t%s\n' commit "$commit" date "$other_stuff"
+	git cat-file -p "$commit":coronavirus-cases.html 2> /dev/null | \
+	  awk '
+		/<td>Negative/ || \
+		/<td>Currently under investigation/ || \
+		/<td>Confirmed positive/ || \
+		/<td>Resolved/ || \
+		/<td>Deceased/ || \
+		/Total number of patients approved for COVID-19 testing/ {
+			key = $0
+			sub(/.*<td>(<strong>)?/, "", key)
+			sub(/<.*/, "", key)
+			getline
+			val = $0
+			sub(/.*<td>(<b>)?/, "", val)
+			sub(/<.*/, "", val)
+			print key ":\t" val
+	}'
+	echo '%%'
+done | \
+  awk '
+	BEGIN {
+		fmt = "%40s %24s %7d %7d %7d %7d %7d %7d\n"
+		fmt2 = fmt
+		gsub(/%7d/, "%7s", fmt2)
+		gsub(/%/, "%-", fmt2)
+		printf(fmt2, "Commit", "Date", "Neg.", "Investi.", "Positv", \
+		  "Resolv.", "Dec'"'"'d", "Tst.Ap.")
+		  # These column header/footer names are trash, I am sorry
+		  # about that.  Just trying to fit them into 7 characters.
+	}
+
+	function getval(  str) {
+		str = $0
+		sub(/.*:\t/, "", str)
+		return str
+	}
+
+	/^commit:/ {
+		commit = getval()
+		next
+	};
+	/^date:/ {
+		date = getval()
+		sub(/^Update as of /, "", date)
+		next
+	}
+	/^Negative:/ {
+		neg = getval()
+		next
+	}
+	/^Currently under investigation:/ {
+		inv = getval()
+		next
+	}
+	/^Confirmed positive/ {
+		pos = getval()
+		next
+	}
+	/^Resolved/ {
+		res = getval()
+		next
+	}
+	/^Deceased/ {
+		dec = getval()
+		next
+	}
+	/^Total number/ {
+		tot = getval()
+		next
+	}
+
+	/^%%$/ {
+		printf(fmt, commit, date, neg, inv, pos, res, dec, tot)
+	}' | \
+  tac
